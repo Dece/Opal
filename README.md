@@ -3,21 +3,34 @@ Opal
 
 Opal is a Gemini server written in Rust. It is meant to serve dynamic content
 through CGI and does not serve static files. In a way, it is a companion project
-to the [Agate][agate] Gemini server which only serves static files, trying to
-focus on a smaller set of features but do them correctly.
+to the [Agate][agate] Gemini server which only serves static files. The
+project's goals are:
 
-[agate]: https://github.com/mbrubeck/agate/
+- Focus on a small set of features (around CGI) but do them correctly.
+- Be nice with old/stupid hardware (TLS 1.2 is OK, be efficient, etc).
+- Don't add features unless someone actively wants them in.
+- Try to keep resources (binary size, memory, etc) under tight control.
 
 Opal uses the `openssl` Rust bindings, which work with OpenSSL and LibreSSL, so
-it should work properly on those platforms. I only support Linux systems but
-feel free to patch stuff!
+it should work properly on those platforms. I currently only support Linux
+systems but if there is interest in other platforms let's do this together!
+
+Opal is licensed as GPLv3.
+
+[agate]: https://github.com/mbrubeck/agate/
 
 
 
 Usage
 -----
 
-Use `opal -h` to get a list of options. There is no config file.
+Use `opal -h` to get a list of options. There is no config file, every setting
+can be configured from the command line.
+
+- `-a, --address <address>`: specify the address to listen to.
+- `-c, --cert <cert>`: server certificate path.
+- `-k, --key <key>`: server private key path.
+- `-r, --root-path <root_path>`: path to CGI scripts root.
 
 
 
@@ -80,3 +93,20 @@ SCRIPT_NAME=/env
 PATH_INFO=/sub1/sub2
 QUERY_STRING=search=%C3%A9l%C3%A9ment
 ```
+
+
+
+Roadmap
+-------
+
+Things to consider:
+
+- Multiple listening addresses, at least so we can easily listen on both IPv4
+    and IPv6.
+- Support SCGI; a bit more complex but should save resources on smol hardware.
+
+Things that probably won't be considered:
+
+- Serve static files; so many other servers to that correctly already!
+- Any kind of security mechanism that is not properly motivated.
+- FastCGI; come on…
