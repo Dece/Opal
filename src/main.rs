@@ -11,7 +11,7 @@ use std::thread;
 extern crate clap;
 
 use chrono::offset::TimeZone;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use openssl::{asn1, ssl, x509};
 
 /// General CGI configuration.
@@ -345,6 +345,17 @@ fn get_response(
             error!("Can't execute script: {}", err);
             cgi_error.to_owned()
         })?;
+
+    if output.stderr.len() > 0 {
+        warn!("Process standard error:");
+        if let Ok(stderr) = std::str::from_utf8(output.stderr.as_slice()) {
+            for line in stderr.lines() {
+                warn!("  {}", line);
+            }
+        } else {
+            error!("Can't decode process standard error.")
+        }
+    }
 
     Ok((url_str.to_string(), output.stdout))
 }
