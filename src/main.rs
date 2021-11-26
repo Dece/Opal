@@ -18,6 +18,7 @@ use openssl::{asn1, ssl, x509};
 #[derive(Clone)]
 struct CgiConfig {
     root: String,
+    envs: HashMap<String, String>,
 }
 
 fn main() {
@@ -65,6 +66,14 @@ fn run() -> Result<(), i32> {
                 .help("Path to CGI scripts root")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("env")
+                .short("e")
+                .long("env")
+                .help("Environment variable for CGI scripts")
+                .takes_value(true)
+                .multiple(true),
+        )
         .get_matches();
 
     // Setup logging pretty much just like Agate.
@@ -80,7 +89,18 @@ fn run() -> Result<(), i32> {
             error!("Invalid CGI root path: {}", err);
             1
         })?;
-    let cgi_config = CgiConfig { root: cgi_root };
+    let mut cgi_envs = HashMap::new();
+    if let Some(envs) = matches.values_of("env") {
+        envs.for_each(|env| {
+            if let Some((key, value)) = env.split_once("=") {
+                cgi_envs.insert(key.to_string(), value.to_string());
+            }
+        })
+    }
+    let cgi_config = CgiConfig {
+        root: cgi_root,
+        envs: cgi_envs,
+    };
 
     // Setup TLS server.
     let acceptor = create_ssl_acceptor(
@@ -339,7 +359,8 @@ fn get_response(
     // Run the subprocess!
     let output = process::Command::new(script_path)
         .env_clear()
-        .envs(envs)
+        .envs(&envs)
+        .envs(&cgi_config.envs)
         .output()
         .map_err(|err| {
             error!("Can't execute script: {}", err);

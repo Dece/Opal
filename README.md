@@ -31,6 +31,8 @@ can be configured from the command line.
 - `-c, --cert <cert>`: server certificate path.
 - `-k, --key <key>`: server private key path.
 - `-r, --root-path <root_path>`: path to CGI scripts root.
+- `-e, --env <key=value>`: additional environment variables for CGI scripts;
+    this option can be used multiple times.
 
 
 
