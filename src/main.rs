@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
+use std::io::Read;
 use std::net;
 use std::path;
 use std::process;
@@ -107,11 +108,11 @@ fn run() -> Result<(), i32> {
         matches.value_of("cert").unwrap(),
         matches.value_of("key").unwrap(),
     )
-    .map_err(|err| run_failure("Could not create TLS acceptor", &err))?;
+    .map_err(|err| run_failure("Can't create TLS acceptor", &err))?;
 
     let address = matches.value_of("address").unwrap();
     let listener = net::TcpListener::bind(address)
-        .map_err(|err| run_failure("Could not create TCP listener", &err))?;
+        .map_err(|err| run_failure("Can't create TCP listener", &err))?;
 
     for stream in listener.incoming() {
         match stream {
@@ -193,10 +194,41 @@ fn handle_client(tls_stream: &mut ssl::SslStream<net::TcpStream>, cgi_config: &C
     }
 
     // Get appropriate response from either Opal or the CGI process.
-    let response: Vec<u8> = match get_response(&request[..read_bytes], cgi_config, &tls_stream) {
-        Ok((url, data)) => {
-            info!("\"{}\" → reply {} bytes", url, data.len());
-            data
+    match get_response(&request[..read_bytes], cgi_config, &tls_stream) {
+        Ok((url, child)) => {
+            let mut buffer = vec![0u8; 4096];
+            let mut stdout = child.stdout.expect("child process stdout not available");
+            let mut num_sent = 0;
+            loop {
+                match stdout.read(&mut buffer) {
+                    Ok(n) if n == 0 => break,
+                    Ok(num_read) => match tls_stream.ssl_write(&buffer[..num_read]) {
+                        Ok(n) => num_sent += n,
+                        Err(err) => error!("Can't write response: {}", err),
+                    },
+                    Err(err) => {
+                        error!("Can't read child process stdout: {}", err);
+                        break;
+                    }
+                }
+            }
+            info!("\"{}\" → replied {} bytes", url, num_sent);
+            let mut stderr = child.stderr.expect("child process' stderr not available");
+            let mut errors = vec![];
+            match stderr.read_to_end(&mut errors) {
+                Ok(n) if n == 0 => {}
+                Ok(_) => {
+                    warn!("Child process stderr:");
+                    if let Ok(errors_utf8) = std::str::from_utf8(errors.as_slice()) {
+                        for line in errors_utf8.lines() {
+                            warn!("  {}", line);
+                        }
+                    } else {
+                        error!("Can't decode process standard error.")
+                    }
+                }
+                Err(err) => error!("Can't read child process stderr: {}", err),
+            }
         }
         Err((url, code, meta)) => {
             info!(
@@ -205,19 +237,17 @@ fn handle_client(tls_stream: &mut ssl::SslStream<net::TcpStream>, cgi_config: &C
                 code,
                 meta
             );
-            format!("{} {}\r\n", code, meta).as_bytes().to_vec()
+            let error_response = format!("{} {}\r\n", code, meta).as_bytes().to_vec();
+            if let Err(err) = tls_stream.ssl_write(&error_response) {
+                error!("Can't write error response: {}", err);
+            }
         }
     };
-
-    // Whether the request succeeded or not, send the response.
-    if let Err(err) = tls_stream.ssl_write(&response) {
-        error!("Error while writing TLS data: {}", err);
-    }
 
     // Properly close the connection with a close notify.
     match tls_stream.shutdown() {
         Ok(shutdown) => debug!("Connection shutdown (state: {:?})", shutdown),
-        Err(err) => error!("Could not properly shutdown: {}", err),
+        Err(err) => error!("Can't properly shutdown: {}", err),
     }
 }
 
@@ -232,7 +262,7 @@ fn get_response(
     request: &[u8],
     cgi_config: &CgiConfig,
     tls: &ssl::SslStream<net::TcpStream>,
-) -> Result<(String, Vec<u8>), (Option<String>, u8, &'static str)> {
+) -> Result<(String, process::Child), (Option<String>, u8, &'static str)> {
     // Convert the URL to UTF-8.
     let url_str = std::str::from_utf8(&request[..request.len() - 2])
         .map_err(|_| (None, 59, "URL is not valid UTF-8"))?;
@@ -357,28 +387,19 @@ fn get_response(
         .collect::<HashMap<String, String>>();
 
     // Run the subprocess!
-    let output = process::Command::new(script_path)
+    let child = process::Command::new(script_path)
         .env_clear()
         .envs(&envs)
         .envs(&cgi_config.envs)
-        .output()
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped())
+        .spawn()
         .map_err(|err| {
             error!("Can't execute script: {}", err);
             cgi_error.to_owned()
         })?;
 
-    if output.stderr.len() > 0 {
-        warn!("Process standard error:");
-        if let Ok(stderr) = std::str::from_utf8(output.stderr.as_slice()) {
-            for line in stderr.lines() {
-                warn!("  {}", line);
-            }
-        } else {
-            error!("Can't decode process standard error.")
-        }
-    }
-
-    Ok((url_str.to_string(), output.stdout))
+    Ok((url_str.to_string(), child))
 }
 
 /// Return a validated script path from the requested URL along with CGI PATH_INFO.
