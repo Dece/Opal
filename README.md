@@ -27,12 +27,17 @@ Usage
 Use `opal -h` to get a list of options. There is no config file, every setting
 can be configured from the command line.
 
-- `-a, --address <address>`: specify the address to listen to.
+- `-a, --address <address>`: specify the address(es) to listen to.
 - `-c, --cert <cert>`: server certificate path.
 - `-k, --key <key>`: server private key path.
 - `-r, --root-path <root_path>`: path to CGI scripts root.
 - `-e, --env <key=value>`: additional environment variables for CGI scripts;
     this option can be used multiple times.
+
+You can specify multiple addresses to listen to by using several `-a` options.
+Note that if you just want to listen to both IPv4 and IPv6 on any interface,
+listening only on `[::]:1965` should suffice for systems with dual-stack
+enabled (default on many Linux systems, maybe not BSD).
 
 
 
@@ -103,9 +108,8 @@ Roadmap
 
 Things to consider:
 
-- Multiple listening addresses, at least so we can easily listen on both IPv4
-    and IPv6.
 - Support SCGI; a bit more complex but should save resources on smol hardware.
+- Chroot; quite cheap and can bring a bit of peace of mind.
 
 Things that probably won't be considered:
 

@@ -41,7 +41,8 @@ fn run() -> Result<(), i32> {
                 .short("a")
                 .long("address")
                 .help("Address to listen to")
-                .takes_value(true),
+                .takes_value(true)
+                .multiple(true),
         )
         .arg(
             clap::Arg::with_name("cert")
@@ -110,24 +111,38 @@ fn run() -> Result<(), i32> {
     )
     .map_err(|err| run_failure("Can't create TLS acceptor", &err))?;
 
-    let address = matches.value_of("address").unwrap();
-    let listener = net::TcpListener::bind(address)
-        .map_err(|err| run_failure("Can't create TCP listener", &err))?;
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let acceptor = acceptor.clone();
-                let cgi_config = cgi_config.clone();
-                thread::spawn(move || match acceptor.accept(stream) {
-                    Ok(mut tls_stream) => handle_client(&mut tls_stream, &cgi_config),
-                    Err(err) => error!("Can't initiate TLS stream: {}", err),
-                });
-            }
+    let mut threads = vec![];
+    for address in matches.values_of("address").unwrap() {
+        let listener = match net::TcpListener::bind(address) {
+            Ok(l) => l,
             Err(err) => {
-                error!("Can't accept connection: {}", err);
+                error!("Can't create TCP listener: {}", &err);
+                continue
             }
-        }
+        };
+        info!("Listening on {}", address);
+        let acceptor = acceptor.clone();
+        let cgi_config = cgi_config.clone();
+        threads.push(thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let acceptor = acceptor.clone();
+                        let cgi_config = cgi_config.clone();
+                        thread::spawn(move || match acceptor.accept(stream) {
+                            Ok(mut tls_stream) => handle_client(&mut tls_stream, &cgi_config),
+                            Err(err) => error!("Can't initiate TLS stream: {}", err),
+                        });
+                    }
+                    Err(err) => {
+                        error!("Can't accept connection: {}", err);
+                    }
+                }
+            }
+        }));
+    }
+    for t in threads.into_iter() {
+        t.join().unwrap();
     }
     Ok(())
 }
