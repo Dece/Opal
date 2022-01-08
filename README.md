@@ -8,7 +8,7 @@ project's goals are:
 
 - Focus on a small set of features (around CGI) but do them correctly.
 - Be nice with old/stupid hardware (TLS 1.2 is OK, be efficient, etc).
-- Don't add features unless someone actively wants them in.
+- Don't add features (see the roadmap at the end of this file).
 - Try to keep resources (binary size, memory, etc) under tight control.
 
 Opal uses the `openssl` Rust bindings, which work with OpenSSL and LibreSSL, so
@@ -18,6 +18,23 @@ systems but if there is interest in other platforms let's do this together!
 Opal is licensed as GPLv3.
 
 [agate]: https://github.com/mbrubeck/agate/
+
+
+
+Installation
+------------
+
+### Pre-compiled releases
+
+Binary releases for 64-bit Linux systems are available on [my Gitea][gitea-rel]
+and on [Github][gh-rel].
+
+[gitea-rel]: https://git.dece.space/Dece/Opal/releases
+[gh-rel]: https://github.com/Dece/Opal/releases
+
+### Compiling from sources
+
+Compiling Opal requires Cargo installed with the stable Rust toolchain.
 
 
 
@@ -38,6 +55,43 @@ You can specify multiple addresses to listen to by using several `-a` options.
 Note that if you just want to listen to both IPv4 and IPv6 on any interface,
 listening only on `[::]:1965` should suffice for systems with dual-stack
 enabled (default on many Linux systems, maybe not BSD).
+
+### Systemd
+
+I personally run Opal as a Systemd service. Here is an example unit file:
+
+``` ini
+[Unit]
+Description=Opal Gemini server
+
+[Service]
+WorkingDirectory=/home/gemini/opal
+User=gemini
+Group=gemini
+ExecStart=/usr/local/bin/opal -a "[::]:1966" -c certs/cert.pem -k certs/key.pem -r cgi -e STORAGE_ROOT=storage
+Restart=always
+RestartSec=1
+SyslogIdentifier=opal
+# Security options:
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=tmpfs
+BindReadOnlyPaths="/home/gemini/opal"
+BindPaths="/home/gemini/opal/storage"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- Opal has been installed in `/usr/local/bin`
+- The directory `/home/gemini/opal` contains the directories `certs`, `cgi` and
+    `storage`, for certificates, the CGI scripts and a storage path.
+- The `/home` directory is not readable, except for `/home/gemini/opal` which is
+    read-only, except for the `storage` directory which is writeable.
+
+This is just an example, please do not mindlessly copy and paste it without
+understanding what the options stand for. It is also possible to use a chrooted
+environment or the Systemd equivalent option RootDirectory. Your choice!
 
 
 
@@ -82,9 +136,9 @@ Opal does not provide `CONTENT_LENGTH`, `CONTENT_TYPE`, `REMOTE_IDENT` because
 they do not make much sense in Gemini. `PATH_TRANSLATED` is also not implemented
 by pure laziness.
 
-The `TLS_CLIENT_HASH` is a string that starts with "SHA256:" followed by the
-SHA256 digest of the DER representation of the client certificate, as an
-uppercase hex-string.
+The `TLS_CLIENT_HASH` is a string that starts with the 7 bytes `SHA256:`
+followed by the SHA256 digest of the DER representation of the client
+certificate, as an uppercase hex-string.
 
 It can be a bit confusing which variable represent what data, especially those
 related to the URL and the path. Take the following request as example:
@@ -106,13 +160,12 @@ QUERY_STRING=search=%C3%A9l%C3%A9ment
 Roadmap
 -------
 
-Things to consider:
+Things that might end up in Opal one day:
 
 - Support SCGI; a bit more complex but should save resources on smol hardware.
-- Chroot; quite cheap and can bring a bit of peace of mind.
 
 Things that probably won't be considered:
 
-- Serve static files; so many other servers to that correctly already!
+- Serve static files; so many other servers do that correctly already!
 - Any kind of security mechanism that is not properly motivated.
-- FastCGI; come on…
+- FastCGI; un-smol…
