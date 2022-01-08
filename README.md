@@ -36,6 +36,17 @@ and on [Github][gh-rel].
 
 Compiling Opal requires Cargo installed with the stable Rust toolchain.
 
+Opal tries to use as few dependencies as possible. Here is the current list
+along with the motivation:
+
+- `chrono`: helps to convert ASN.1 times to RFC 3339… yeah sorry about that;
+- `clap`: sturdy CLI library;
+- `env_logger`: simple logging frontend for log;
+- `log`: logging framework;
+- `openssl`: SSL support, relies on your system's TLS libraries;
+- `percent-encoding`: handle percent-encoded strings, not provided by `url`;
+- `url`: URL parsing, best not to reinvent the wheel here;
+
 
 
 Usage
