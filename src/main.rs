@@ -210,9 +210,9 @@ fn handle_client(tls_stream: &mut ssl::SslStream<net::TcpStream>, cgi_config: &C
 
     // Get appropriate response from either Opal or the CGI process.
     match get_response(&request[..read_bytes], cgi_config, &tls_stream) {
-        Ok((url, child)) => {
+        Ok((url, mut child)) => {
             let mut buffer = vec![0u8; 4096];
-            let mut stdout = child.stdout.expect("child process stdout not available");
+            let mut stdout = child.stdout.take().expect("child process stdout not available");
             let mut num_sent = 0;
             loop {
                 match stdout.read(&mut buffer) {
@@ -228,6 +228,7 @@ fn handle_client(tls_stream: &mut ssl::SslStream<net::TcpStream>, cgi_config: &C
                 }
             }
             info!("\"{}\" → replied {} bytes", url, num_sent);
+            child.wait().expect("child process can't be waited for");
             let mut stderr = child.stderr.expect("child process' stderr not available");
             let mut errors = vec![];
             match stderr.read_to_end(&mut errors) {
